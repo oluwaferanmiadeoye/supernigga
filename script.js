@@ -304,54 +304,91 @@ async function createRoom() {
   }
 
   if (!currentUser) {
-    alert("Please wait for connection...");
-    return;
+    // Try to authenticate again
+    try {
+      const authResult = await auth.signInAnonymously();
+      currentUser = authResult.user;
+      console.log("Re-authenticated:", currentUser.uid);
+    } catch (error) {
+      console.error("Authentication failed:", error);
+      alert("Connection failed. Please refresh the page.");
+      return;
+    }
   }
 
   const roomCode = generateRoomCode();
 
   try {
-    await db
-      .collection("rooms")
-      .doc(roomCode)
-      .set({
-        host: currentUser.uid,
-        players: {
-          [currentUser.uid]: {
-            name: playerName,
-            score: 0,
-            ready: false,
-          },
+    console.log("Creating room with code:", roomCode);
+    
+    // Check if room already exists first
+    const roomRef = db.collection("rooms").doc(roomCode);
+    const roomDoc = await roomRef.get();
+    
+    if (roomDoc.exists) {
+      console.log("Room already exists, generating new code");
+      // Try again with a new code
+      createRoom();
+      return;
+    }
+
+    const roomData = {
+      host: currentUser.uid,
+      players: {
+        [currentUser.uid]: {
+          name: playerName,
+          score: 0,
+          ready: false,
         },
-        gameState: "lobby",
-        currentLetter: null,
-        answers: {},
-        roundComplete: false,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      },
+      gameState: "lobby",
+      currentLetter: null,
+      answers: {},
+      roundComplete: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await roomRef.set(roomData);
+    console.log("Room created successfully");
 
     currentRoom = roomCode;
     isHost = true;
 
-    // Log room creation event
-    analytics.logEvent('create_room', {
-      userId: currentUser.uid,
-      userName: playerName,
-      roomCode: roomCode
-    });
+    try {
+      // Log room creation event
+      analytics.logEvent('create_room', {
+        userId: currentUser.uid,
+        userName: playerName,
+        roomCode: roomCode
+      });
+    } catch (analyticsError) {
+      console.warn("Analytics error:", analyticsError);
+      // Continue even if analytics fails
+    }
 
-    // Update user's game stats
-    await db.collection('users').doc(currentUser.uid).set({
-      lastGameAt: firebase.firestore.FieldValue.serverTimestamp(),
-      gamesHosted: firebase.firestore.FieldValue.increment(1),
-      currentRoom: roomCode
-    }, { merge: true });
+    try {
+      // Update user's game stats
+      await db.collection('users').doc(currentUser.uid).set({
+        lastGameAt: firebase.firestore.FieldValue.serverTimestamp(),
+        gamesHosted: firebase.firestore.FieldValue.increment(1),
+        currentRoom: roomCode
+      }, { merge: true });
+    } catch (statsError) {
+      console.warn("Failed to update user stats:", statsError);
+      // Continue even if stats update fails
+    }
 
     setupRoomListener();
     showLobby();
   } catch (error) {
     console.error("Error creating room:", error);
-    alert("Failed to create room. Please try again.");
+    if (error.code === 'permission-denied') {
+      alert("Permission denied. Please refresh the page and try again.");
+    } else if (error.code === 'unavailable') {
+      alert("Server is currently unavailable. Please try again in a few moments.");
+    } else {
+      alert("Failed to create room: " + error.message);
+    }
   }
 }
 
