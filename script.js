@@ -624,7 +624,6 @@ async function submitAnswers() {
     console.log("Answers submitted successfully");
 
     // Update UI to show waiting state immediately
-    const submitButton = document.getElementById("submitBtn");
     if (submitButton) {
       submitButton.textContent = "Waiting for other players...";
     }
