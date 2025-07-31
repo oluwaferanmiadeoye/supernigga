@@ -1057,10 +1057,16 @@ async function calculateAndShowResults() {
     const updatedPlayers = { ...roomData.players };
     const allAnswers = roomData.answers;
     
-    // Initialize votes object if it doesn't exist
-    if (!roomData.votes) {
-      await roomRef.update({ votes: {} });
-    }
+    // Always initialize a fresh votes object for the round
+    await roomRef.update({ 
+      votes: Object.keys(allAnswers).reduce((acc, uid) => {
+        acc[uid] = categories.reduce((catAcc, category) => {
+          catAcc[category] = {};
+          return catAcc;
+        }, {});
+        return acc;
+      }, {})
+    });
 
     // For each category, check for duplicates and valid answers
     categories.forEach((category) => {
@@ -1162,10 +1168,11 @@ function updateResultsScreen(roomData) {
         const answer = roomData.answers[uid][category]?.trim() || "";
         const answerLower = answer.toLowerCase();
         const isInDictionary = category === "name" || validWords[category].has(answerLower);
-        const votes = roomData.votes?.[uid]?.[category] || {};
+        const votes = (roomData.votes && roomData.votes[uid] && roomData.votes[uid][category]) || {};
         const voteCount = Object.values(votes).filter(v => v === true).length;
-        const totalPlayers = Object.keys(roomData.players).length;
-        const isValidByVotes = voteCount >= Math.ceil(totalPlayers / 2);
+        const totalPlayers = Object.keys(roomData.players).length - 1; // Exclude the player being voted on
+        const requiredVotes = Math.ceil(totalPlayers / 2);
+        const isValidByVotes = voteCount >= requiredVotes;
         const isValid = answerLower.startsWith(currentLetter) && 
                        answerLower.length >= 2 && 
                        (isInDictionary || isValidByVotes);
@@ -1267,6 +1274,7 @@ async function nextRound() {
       gameState: "playing",
       currentLetter: randomLetter,
       answers: {},
+      votes: {}, // Reset votes for new round
       roundComplete: false,
       gameStartTime: firebase.firestore.FieldValue.serverTimestamp(),
     });
@@ -1474,14 +1482,31 @@ async function voteAnswer(targetUid, category, vote) {
   try {
     const roomRef = db.collection("rooms").doc(currentRoom);
     
+    // First get current room data to check game state
+    const roomDoc = await roomRef.get();
+    const roomData = roomDoc.data();
+    
+    // Only allow voting if we're in results state
+    if (roomData.gameState !== "results") {
+      console.error("Can only vote during results phase");
+      return;
+    }
+    
+    // Ensure votes structure exists
+    if (!roomData.votes || !roomData.votes[targetUid] || !roomData.votes[targetUid][category]) {
+      await roomRef.update({
+        [`votes.${targetUid}.${category}`]: {}
+      });
+    }
+    
     // Update the votes in the database
     await roomRef.update({
       [`votes.${targetUid}.${category}.${currentUser.uid}`]: vote
     });
 
-    // Get the updated room data
-    const roomDoc = await roomRef.get();
-    const roomData = roomDoc.data();
+    // Get the fresh room data after vote update
+    const updatedRoomDoc = await roomRef.get();
+    const updatedRoomData = updatedRoomDoc.data();
     
     // Check if majority vote is reached
     const votes = roomData.votes[targetUid][category];
