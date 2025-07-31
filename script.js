@@ -9,54 +9,15 @@ const firebaseConfig = {
   measurementId: "G-2Z21WPFC9C"
 };
 
-// Initialize Firebase with persistence
-try {
-  firebase.initializeApp(firebaseConfig);
-} catch (error) {
-  if (error.code === 'app/duplicate-app') {
-    // If the app is already initialized, get the existing instance
-    firebase.app();
-  } else {
-    console.error("Firebase initialization error:", error);
-    alert("Connection error. Please refresh and try again.");
-  }
-}
-
-const db = firebase.firestore();
-const auth = firebase.auth();
-const analytics = firebase.analytics();
-
-// Enable offline persistence for Firestore with error handling
-try {
-  await db.enablePersistence({synchronizeTabs: true})
-    .catch((err) => {
-      if (err.code === 'failed-precondition') {
-        // Multiple tabs open, persistence can only be enabled in one tab at a time.
-        console.log('Persistence failed: Multiple tabs open');
-      } else if (err.code === 'unimplemented') {
-        // The current browser doesn't support persistence
-        console.log('Persistence not supported by browser');
-      }
-    });
-} catch (error) {
-  console.warn("Persistence setup error:", error);
-  // Continue without persistence
-}
-
-// Configure Auth persistence
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-  .catch((error) => {
-    console.error('Auth persistence error:', error);
-  });
-
-// Game state
-let currentRoom = null;
+// Initialize Firebase and game state variables
+let db, auth, analytics;
 let currentUser = null;
+let currentRoom = null;
 let isHost = false;
 let gameTimer = null;
 let roomListener = null;
 
-// Categories for the game
+// Game constants
 const categories = ["name", "animal", "place", "food", "thing"];
 const categoryIcons = {
   name: '<i class="fas fa-user"></i>',
@@ -65,6 +26,87 @@ const categoryIcons = {
   food: '<i class="fas fa-utensils"></i>',
   thing: '<i class="fas fa-cube"></i>',
 };
+
+// Define all functions before making them global
+function showHome() {
+  location.reload();
+}
+
+function showJoinRoom() {
+  const joinScreen = document.getElementById("joinScreen");
+  const screenWrapper = document.createElement('div');
+  screenWrapper.className = 'screen-wrapper';
+  
+  // Clear existing content
+  document.body.innerHTML = '';
+  
+  // Setup join screen
+  joinScreen.classList.add('active');
+  screenWrapper.appendChild(joinScreen);
+  document.body.appendChild(screenWrapper);
+  
+  // Focus the name input
+  setTimeout(() => {
+    const nameInput = document.getElementById("joinPlayerName");
+    if (nameInput) nameInput.focus();
+  }, 100);
+}
+
+// Make functions available globally after they're defined
+window.createRoom = createRoom;
+window.showJoinRoom = showJoinRoom;
+window.joinRoom = joinRoom;
+window.showHome = showHome;
+window.leaveRoom = leaveRoom;
+window.startGame = startGame;
+window.submitAnswers = submitAnswers;
+window.nextRound = nextRound;
+window.endGame = endGame;
+
+async function initializeFirebase() {
+  try {
+    firebase.initializeApp(firebaseConfig);
+  } catch (error) {
+    if (error.code === 'app/duplicate-app') {
+      // If the app is already initialized, get the existing instance
+      firebase.app();
+    } else {
+      console.error("Firebase initialization error:", error);
+      alert("Connection error. Please refresh and try again.");
+      return false;
+    }
+  }
+
+  db = firebase.firestore();
+  auth = firebase.auth();
+  analytics = firebase.analytics();
+
+  // Configure Auth persistence
+  try {
+    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+  } catch (error) {
+    console.error('Auth persistence error:', error);
+  }
+
+  // Enable offline persistence for Firestore with error handling
+  try {
+    await db.enablePersistence({synchronizeTabs: true})
+      .catch((err) => {
+        if (err.code === 'failed-precondition') {
+          // Multiple tabs open, persistence can only be enabled in one tab at a time.
+          console.log('Persistence failed: Multiple tabs open');
+        } else if (err.code === 'unimplemented') {
+          // The current browser doesn't support persistence
+          console.log('Persistence not supported by browser');
+        }
+      });
+  } catch (error) {
+    console.warn("Persistence setup error:", error);
+    // Continue without persistence
+  }
+  
+  return true;
+}
 
 // Dictionary for validating answers
 const validWords = {
@@ -178,6 +220,35 @@ const validWords = {
     "zipper"
   ])
 };
+
+// Initialize everything when the page loads
+// Initialize everything when the document is ready
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    console.log("Initializing Firebase...");
+    const initialized = await initializeFirebase();
+    if (initialized) {
+      console.log("Firebase initialized successfully");
+      await initializeAuth();
+    }
+  } catch (error) {
+    console.error("Initialization error:", error);
+    alert("Failed to initialize. Please refresh the page.");
+  }
+});
+
+// Ensure functions are available globally at the end of the file
+Object.assign(window, {
+  createRoom,
+  showJoinRoom,
+  joinRoom,
+  showHome,
+  leaveRoom,
+  startGame,
+  submitAnswers,
+  nextRound,
+  endGame
+});
 
 // Initialize anonymous authentication with retry mechanism
 async function initializeAuth(retryCount = 0) {
@@ -338,26 +409,45 @@ function generateRoomCode() {
 }
 
 async function createRoom() {
-  const playerName = document.getElementById("playerName").value.trim();
-  if (!playerName) {
-    alert("Please enter your name!");
-    return;
-  }
+  try {
+    // First ensure Firebase is initialized
+    if (!db || !auth) {
+      console.log("Firebase not initialized, initializing now...");
+      const initialized = await initializeFirebase();
+      if (!initialized) {
+        alert("Failed to initialize connection. Please refresh the page.");
+        return;
+      }
+    }
 
-  if (!currentUser) {
-    // Try to authenticate again
-    try {
-      const authResult = await auth.signInAnonymously();
-      currentUser = authResult.user;
-      console.log("Re-authenticated:", currentUser.uid);
-    } catch (error) {
-      console.error("Authentication failed:", error);
-      alert("Connection failed. Please refresh the page.");
+    const playerName = document.getElementById("playerName").value.trim();
+    if (!playerName) {
+      alert("Please enter your name!");
       return;
     }
-  }
 
-  const roomCode = generateRoomCode();
+    // Check internet connection
+    if (!navigator.onLine) {
+      alert("No internet connection. Please check your connection and try again.");
+      return;
+    }
+
+    if (!currentUser) {
+      // Try to authenticate again
+      try {
+        console.log("No current user, authenticating...");
+        const authResult = await auth.signInAnonymously();
+        currentUser = authResult.user;
+        console.log("Re-authenticated:", currentUser.uid);
+      } catch (error) {
+        console.error("Authentication failed:", error);
+        alert("Connection failed. Please refresh the page.");
+        return;
+      }
+    }
+
+    const roomCode = generateRoomCode();
+    console.log("Generated room code:", roomCode);
 
   try {
     console.log("Creating room with code:", roomCode);
@@ -421,6 +511,16 @@ async function createRoom() {
 
     setupRoomListener();
     showLobby();
+  } catch (error) {
+    console.error("Error creating room:", error);
+    if (error.code === 'permission-denied') {
+      alert("Permission denied. Please refresh the page and try again.");
+    } else if (error.code === 'unavailable') {
+      alert("Server is currently unavailable. Please try again in a few moments.");
+    } else {
+      alert("Failed to create room: " + error.message);
+    }
+  }
   } catch (error) {
     console.error("Error creating room:", error);
     if (error.code === 'permission-denied') {
