@@ -332,7 +332,7 @@ function setupRoomListener() {
 
 function updateGameState(roomData) {
   const gameState = roomData.gameState;
-  console.log("Updating game state to:", gameState);
+  console.log("Updating game state to:", gameState, roomData);
 
   try {
     if (gameState === "lobby") {
@@ -340,7 +340,25 @@ function updateGameState(roomData) {
     } else if (gameState === "playing") {
       updateGameScreen(roomData);
     } else if (gameState === "results") {
+      // Clear any existing timer
+      if (gameTimer) {
+        clearInterval(gameTimer);
+        gameTimer = null;
+      }
       updateResultsScreen(roomData);
+    }
+    
+    // Update waiting status if in playing state
+    if (gameState === "playing" && roomData.answers) {
+      const playerCount = Object.keys(roomData.players || {}).length;
+      const answerCount = Object.keys(roomData.answers || {}).length;
+      
+      if (answerCount > 0 && answerCount < playerCount) {
+        const submitButton = document.getElementById("submitBtn");
+        if (submitButton && submitButton.disabled) {
+          submitButton.textContent = `Waiting for other players... (${answerCount}/${playerCount})`;
+        }
+      }
     }
   } catch (error) {
     console.error("Error updating game state:", error);
@@ -608,9 +626,23 @@ async function submitAnswers() {
 
     console.log(`Answers submitted: ${answerCount}/${playerCount}`);
 
+    // If all players have submitted and this player is host, calculate results
     if (answerCount >= playerCount && isHost) {
       console.log("All players submitted, calculating results...");
       await calculateAndShowResults();
+    } else if (answerCount >= playerCount) {
+      console.log("All players submitted, waiting for host to calculate results...");
+      // Update UI to show waiting message
+      const submitButton = document.getElementById("submitBtn");
+      if (submitButton) {
+        submitButton.textContent = "Waiting for results...";
+      }
+    } else {
+      // Update UI to show waiting for other players
+      const submitButton = document.getElementById("submitBtn");
+      if (submitButton) {
+        submitButton.textContent = `Waiting for other players... (${answerCount}/${playerCount})`;
+      }
     }
   } catch (error) {
     console.error("Error submitting answers:", error);
