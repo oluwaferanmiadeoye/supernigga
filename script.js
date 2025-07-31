@@ -335,16 +335,17 @@ function updateGameState(roomData) {
   console.log("Updating game state to:", gameState, roomData);
 
   try {
+    // Clear any existing timer if state is changing
+    if (gameState !== "playing" && gameTimer) {
+      clearInterval(gameTimer);
+      gameTimer = null;
+    }
+
     if (gameState === "lobby") {
       updateLobby(roomData);
     } else if (gameState === "playing") {
       updateGameScreen(roomData);
     } else if (gameState === "results") {
-      // Clear any existing timer
-      if (gameTimer) {
-        clearInterval(gameTimer);
-        gameTimer = null;
-      }
       updateResultsScreen(roomData);
     }
     
@@ -352,12 +353,21 @@ function updateGameState(roomData) {
     if (gameState === "playing" && roomData.answers) {
       const playerCount = Object.keys(roomData.players || {}).length;
       const answerCount = Object.keys(roomData.answers || {}).length;
+      const btnSubmit = document.getElementById("submitBtn");
       
-      if (answerCount > 0 && answerCount < playerCount) {
-        const submitButton = document.getElementById("submitBtn");
-        if (submitButton && submitButton.disabled) {
-          submitButton.textContent = `Waiting for other players... (${answerCount}/${playerCount})`;
+      // Update submit button status based on whether this player has submitted
+      if (btnSubmit) {
+        if (roomData.answers[currentUser.uid]) {
+          btnSubmit.disabled = true;
+          btnSubmit.textContent = `Waiting for other players... (${answerCount}/${playerCount})`;
+        } else if (!btnSubmit.disabled) {
+          btnSubmit.textContent = "Submit Answers";
         }
+      }
+
+      // If all players have submitted and this is the host, trigger results calculation
+      if (answerCount >= playerCount && isHost && gameState === "playing") {
+        calculateAndShowResults();
       }
     }
   } catch (error) {
@@ -600,49 +610,28 @@ async function submitAnswers() {
       input.disabled = true;
     });
 
-    // Submit answers to database
+    // Submit answers to database with submission timestamp
     await db
       .collection("rooms")
       .doc(currentRoom)
       .update({
-        [`answers.${currentUser.uid}`]: answers,
+        [`answers.${currentUser.uid}`]: {
+          ...answers,
+          submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }
       });
 
     console.log("Answers submitted successfully");
 
-    // Check if all players have submitted
-    const roomDoc = await db.collection("rooms").doc(currentRoom).get();
-    if (!roomDoc.exists) {
-      throw new Error("Room not found after submitting answers");
+    // Update UI to show waiting state immediately
+    const submitButton = document.getElementById("submitBtn");
+    if (submitButton) {
+      submitButton.textContent = "Waiting for other players...";
     }
 
-    const roomData = roomDoc.data();
-    if (!roomData) {
-      throw new Error("Invalid room data after submitting answers");
-    }
-
-    const playerCount = Object.keys(roomData.players || {}).length;
-    const answerCount = Object.keys(roomData.answers || {}).length;
-
-    console.log(`Answers submitted: ${answerCount}/${playerCount}`);
-
-    // If all players have submitted and this player is host, calculate results
-    if (answerCount >= playerCount && isHost) {
-      console.log("All players submitted, calculating results...");
-      await calculateAndShowResults();
-    } else if (answerCount >= playerCount) {
-      console.log("All players submitted, waiting for host to calculate results...");
-      // Update UI to show waiting message
-      const submitButton = document.getElementById("submitBtn");
-      if (submitButton) {
-        submitButton.textContent = "Waiting for results...";
-      }
-    } else {
-      // Update UI to show waiting for other players
-      const submitButton = document.getElementById("submitBtn");
-      if (submitButton) {
-        submitButton.textContent = `Waiting for other players... (${answerCount}/${playerCount})`;
-      }
+    if (isHost) {
+      // If host, start checking for all submissions
+      checkAllSubmissions();
     }
   } catch (error) {
     console.error("Error submitting answers:", error);
@@ -657,6 +646,44 @@ async function submitAnswers() {
     if (submitButton) {
       submitButton.disabled = false;
     }
+  }
+}
+
+async function checkAllSubmissions() {
+  if (!isHost) return;
+
+  try {
+    const roomRef = db.collection("rooms").doc(currentRoom);
+    const checkSubmissions = async () => {
+      const roomDoc = await roomRef.get();
+      if (!roomDoc.exists) return;
+
+      const roomData = roomDoc.data();
+      if (!roomData) return;
+
+      const playerCount = Object.keys(roomData.players || {}).length;
+      const answerCount = Object.keys(roomData.answers || {}).length;
+
+      console.log(`Checking submissions: ${answerCount}/${playerCount}`);
+
+      if (answerCount >= playerCount) {
+        // All players have submitted, calculate results
+        clearInterval(submissionCheckInterval);
+        await calculateAndShowResults();
+      }
+    };
+
+    // Check every second for new submissions
+    const submissionCheckInterval = setInterval(checkSubmissions, 1000);
+    // Also check immediately
+    await checkSubmissions();
+
+    // Clear interval after 35 seconds (5 seconds more than the timer) to prevent indefinite checking
+    setTimeout(() => {
+      clearInterval(submissionCheckInterval);
+    }, 35000);
+  } catch (error) {
+    console.error("Error checking submissions:", error);
   }
 }
 
