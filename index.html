@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="ajay.jpg" type="image/x-icon" />
+    <title>Super Nigga</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1><i class="fas fa-bullseye"></i> Super Nigga</h1>
+
+      <!-- Home Screen -->
+      <div id="homeScreen" class="screen active">
+        <div class="text-center">
+          <p style="font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9">
+            Which one of y'all Nigas is the fastest thinker... Fuck around and
+            find out g
+          </p>
+
+          <div class="input-group">
+            <label for="playerName">Your Name</label>
+            <input
+              type="text"
+              id="playerName"
+              placeholder="Enter your name"
+              maxlength="20"
+            />
+          </div>
+
+          <button class="btn" onclick="createRoom()">
+            <i class="fas fa-gamepad"></i> Create Room
+          </button>
+          <button class="btn btn-secondary" onclick="showJoinRoom()">
+            <i class="fas fa-door-open"></i> Join Room
+          </button>
+        </div>
+      </div>
+
+      <!-- Join Room Screen -->
+      <div id="joinScreen" class="screen">
+        <div class="text-center">
+          <h2 style="margin-bottom: 2rem">Join a Room</h2>
+
+          <div class="input-group">
+            <label for="roomCode">Room Code</label>
+            <input
+              type="text"
+              id="roomCode"
+              placeholder="Enter 4-letter code"
+              maxlength="4"
+              style="text-transform: uppercase"
+            />
+          </div>
+
+          <button class="btn btn-success" onclick="joinRoom()">
+            Join Game
+          </button>
+          <button class="btn btn-secondary" onclick="showHome()">Back</button>
+        </div>
+      </div>
+
+      <!-- Lobby Screen -->
+      <div id="lobbyScreen" class="screen">
+        <div class="text-center">
+          <h2>Game Lobby</h2>
+
+          <div class="room-code" id="displayRoomCode">ABCD</div>
+          <p style="margin-bottom: 2rem; opacity: 0.8">
+            Share this code with your super niggas!
+          </p>
+
+          <div class="players-list" id="playersList">
+            <!-- Players will be dynamically added here -->
+          </div>
+
+          <div id="hostControls" class="text-center" style="display: none">
+            <button class="btn" onclick="startGame()">
+              <i class="fas fa-rocket"></i> Start Game
+            </button>
+          </div>
+
+          <button class="btn btn-secondary" onclick="leaveRoom()">
+            Leave Room
+          </button>
+        </div>
+      </div>
+
+      <!-- Game Screen -->
+      <div id="gameScreen" class="screen">
+        <div class="text-center">
+          <div class="letter-display" id="currentLetter">A</div>
+          <div class="timer" id="timer">30</div>
+
+          <div class="categories">
+            <div class="category">
+              <div class="category-icon"><i class="fas fa-user"></i></div>
+              <h3>Name</h3>
+              <input
+                type="text"
+                id="nameInput"
+                placeholder="Enter a name..."
+                maxlength="30"
+              />
+            </div>
+
+            <div class="category">
+              <div class="category-icon"><i class="fas fa-paw"></i></div>
+              <h3>Animal</h3>
+              <input
+                type="text"
+                id="animalInput"
+                placeholder="Enter an animal..."
+                maxlength="30"
+              />
+            </div>
+
+            <div class="category">
+              <div class="category-icon">
+                <i class="fas fa-globe-americas"></i>
+              </div>
+              <h3>Place</h3>
+              <input
+                type="text"
+                id="placeInput"
+                placeholder="Enter a place..."
+                maxlength="30"
+              />
+            </div>
+
+            <div class="category">
+              <div class="category-icon"><i class="fas fa-utensils"></i></div>
+              <h3>Food</h3>
+              <input
+                type="text"
+                id="foodInput"
+                placeholder="Enter a food..."
+                maxlength="30"
+              />
+            </div>
+
+            <div class="category">
+              <div class="category-icon"><i class="fas fa-cube"></i></div>
+              <h3>Thing</h3>
+              <input
+                type="text"
+                id="thingInput"
+                placeholder="Enter an object..."
+                maxlength="30"
+              />
+            </div>
+          </div>
+
+          <button
+            class="btn btn-success"
+            id="submitBtn"
+            onclick="submitAnswers()"
+          >
+            Submit Answers
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Screen -->
+      <div id="resultsScreen" class="screen">
+        <div class="text-center">
+          <h2>Round Results</h2>
+
+          <div class="results-grid" id="resultsGrid">
+            <!-- Results will be dynamically added here -->
+          </div>
+
+          <div class="leaderboard">
+            <h2><i class="fas fa-trophy"></i> Leaderboard</h2>
+            <div id="leaderboardList">
+              <!-- Leaderboard will be dynamically added here -->
+            </div>
+          </div>
+
+          <div id="hostNextRound" style="display: none">
+            <button class="btn" onclick="nextRound()">
+              <i class="fas fa-bullseye"></i> Next Round
+            </button>
+          </div>
+          <button class="btn btn-secondary" onclick="endGame()">
+            End Game
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <p>
+        Developed by
+        <a
+          href="https://x.com/builtbyajay"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Ajay</a
+        >
+      </p>
+    </footer>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
