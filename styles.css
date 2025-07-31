@@ -457,6 +457,52 @@ input[type="text"]:focus {
   text-decoration: line-through;
 }
 
+.pending-validation {
+  color: #ffa500;
+  font-style: italic;
+}
+
+.vote-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: 1rem;
+}
+
+.vote-buttons button {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vote-buttons button:first-child {
+  color: #16cc5c;
+}
+
+.vote-buttons button:first-child:hover {
+  background: rgba(43, 204, 22, 0.1);
+}
+
+.vote-buttons button:last-child {
+  color: #ff6b6b;
+}
+
+.vote-buttons button:last-child:hover {
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.vote-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .leaderboard {
   background: #f8fafc;
   padding: 1.5rem;

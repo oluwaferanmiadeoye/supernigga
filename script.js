@@ -13,6 +13,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
+const analytics = firebase.analytics();
 
 // Enable offline persistence for Firestore
 db.enablePersistence()
@@ -49,16 +50,155 @@ const categoryIcons = {
   thing: '<i class="fas fa-cube"></i>',
 };
 
+// Dictionary for validating answers
+const validWords = {
+  animal: new Set([
+    "ant", "antelope", "alligator", "alpaca", "ape",
+    "bear", "beaver", "bird", "bison", "bat",
+    "cat", "camel", "cheetah", "chicken", "cow",
+    "dog", "deer", "dolphin", "donkey", "dove",
+    "elephant", "eagle", "eel",
+    "fish", "fox", "frog",
+    "goat", "giraffe", "gorilla",
+    "horse", "hippo", "hamster",
+    "iguana",
+    "jaguar",
+    "kangaroo", "koala",
+    "lion", "leopard", "llama",
+    "monkey", "mouse", "mole",
+    "newt",
+    "octopus", "owl", "ostrich",
+    "panda", "parrot", "pig",
+    "quail",
+    "rabbit", "raccoon", "rat",
+    "sheep", "snake", "squirrel",
+    "tiger", "turtle", "turkey",
+    "unicorn",
+    "vulture",
+    "whale", "wolf", "wombat",
+    "yak",
+    "zebra"
+  ]),
+  place: new Set([
+    "alabama", "alaska", "arizona", "arkansas",
+    "bangkok", "berlin", "boston", "brazil",
+    "california", "canada", "chicago", "china",
+    "denmark", "dubai",
+    "egypt", "england", "ethiopia",
+    "finland", "france",
+    "germany", "greece",
+    "hawaii", "holland",
+    "iceland", "india", "indonesia", "iran", "iraq", "ireland", "italy",
+    "japan", "jordan",
+    "kenya", "kuwait",
+    "london", "lebanon",
+    "madrid", "malaysia", "mexico",
+    "nepal", "netherlands", "nigeria", "norway",
+    "ohio", "oregon", "osaka",
+    "paris", "peru", "poland", "portugal",
+    "qatar",
+    "rome", "russia",
+    "spain", "sweden", "switzerland", "sydney",
+    "texas", "thailand", "tokyo",
+    "uganda", "ukraine",
+    "venice", "vietnam",
+    "wales",
+    "yemen",
+    "zambia", "zimbabwe"
+  ]),
+  food: new Set([
+    "apple", "apricot", "avocado",
+    "banana", "beef", "bread", "broccoli",
+    "cake", "carrot", "cheese", "chicken",
+    "dates",
+    "egg", "eggplant",
+    "fish", "fries",
+    "garlic", "grape",
+    "ham", "honey",
+    "ice cream",
+    "jam", "jelly",
+    "kale", "ketchup",
+    "lemon", "lime",
+    "mango", "meat", "milk",
+    "noodles", "nuts",
+    "orange", "olive",
+    "pasta", "peach", "pear",
+    "quinoa",
+    "rice", "raisin",
+    "salmon", "salt", "sugar",
+    "taco", "tomato", "tuna",
+    "udon",
+    "vanilla",
+    "waffle", "water",
+    "yam", "yogurt",
+    "zucchini"
+  ]),
+  thing: new Set([
+    "alarm", "arrow",
+    "bag", "ball", "book", "box",
+    "car", "chair", "clock",
+    "desk", "door",
+    "ear", "egg",
+    "fan", "flag",
+    "gate", "glass",
+    "hat", "house",
+    "iron",
+    "jar", "jet",
+    "key", "knife",
+    "lamp", "lock",
+    "map", "mask",
+    "nail", "needle",
+    "oven",
+    "pan", "pen",
+    "queen",
+    "radio", "ring",
+    "shoe", "sofa",
+    "table", "toy",
+    "umbrella",
+    "vase",
+    "wall", "watch",
+    "xray",
+    "yarn",
+    "zipper"
+  ])
+};
+
 // Initialize anonymous authentication
 auth
   .signInAnonymously()
   .then((result) => {
     currentUser = result.user;
     console.log("Signed in anonymously:", currentUser.uid);
+    
+    // Set user properties in Analytics
+    analytics.setUserProperties({
+      userType: 'anonymous',
+      userId: currentUser.uid
+    });
+
+    // Log user sign-in event
+    analytics.logEvent('user_login', {
+      method: 'anonymous',
+      userId: currentUser.uid
+    });
+
+    // Store user in a separate collection for tracking
+    return db.collection('users').doc(currentUser.uid).set({
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+      loginCount: firebase.firestore.FieldValue.increment(1),
+      isAnonymous: true
+    }, { merge: true });
   })
   .catch((error) => {
     console.error("Authentication failed:", error);
     alert("Failed to connect. Please refresh the page.");
+    
+    // Log error event
+    analytics.logEvent('login_error', {
+      error_code: error.code,
+      error_message: error.message
+    });
   });
 
 // Screen management
@@ -192,6 +332,21 @@ async function createRoom() {
 
     currentRoom = roomCode;
     isHost = true;
+
+    // Log room creation event
+    analytics.logEvent('create_room', {
+      userId: currentUser.uid,
+      userName: playerName,
+      roomCode: roomCode
+    });
+
+    // Update user's game stats
+    await db.collection('users').doc(currentUser.uid).set({
+      lastGameAt: firebase.firestore.FieldValue.serverTimestamp(),
+      gamesHosted: firebase.firestore.FieldValue.increment(1),
+      currentRoom: roomCode
+    }, { merge: true });
+
     setupRoomListener();
     showLobby();
   } catch (error) {
@@ -239,8 +394,8 @@ async function joinRoom() {
     const roomData = roomDoc.data();
     console.log("Room data:", roomData);
 
-    if (Object.keys(roomData.players).length >= 8) {
-      alert("Room is full! (Max 8 players)");
+    if (Object.keys(roomData.players).length >= 10) {
+      alert("Room is full! (Max 10 players)");
       return;
     }
 
@@ -261,6 +416,21 @@ async function joinRoom() {
     // Update game state
     currentRoom = roomCode;
     isHost = false;
+
+    // Log room join event
+    analytics.logEvent('join_room', {
+      userId: currentUser.uid,
+      userName: playerName,
+      roomCode: roomCode,
+      playerCount: Object.keys(roomData.players).length
+    });
+
+    // Update user's game stats
+    await db.collection('users').doc(currentUser.uid).set({
+      lastGameAt: firebase.firestore.FieldValue.serverTimestamp(),
+      gamesJoined: firebase.firestore.FieldValue.increment(1),
+      currentRoom: roomCode
+    }, { merge: true });
 
     // Show lobby screen first, then setup listener
     showLobby();
@@ -708,6 +878,11 @@ async function calculateAndShowResults() {
     const currentLetter = roomData.currentLetter.toLowerCase();
     const updatedPlayers = { ...roomData.players };
     const allAnswers = roomData.answers;
+    
+    // Initialize votes object if it doesn't exist
+    if (!roomData.votes) {
+      await roomRef.update({ votes: {} });
+    }
 
     // For each category, check for duplicates and valid answers
     categories.forEach((category) => {
@@ -716,7 +891,13 @@ async function calculateAndShowResults() {
       // Collect all answers for this category
       Object.entries(allAnswers).forEach(([uid, answers]) => {
         const answer = answers[category]?.toLowerCase().trim();
-        if (answer && answer.startsWith(currentLetter)) {
+        // Check if answer is valid: starts with correct letter, has at least 2 characters, and is in dictionary
+        // Names don't need dictionary validation
+        const isInDictionary = category === "name" || validWords[category].has(answer);
+        if (answer && 
+            answer.startsWith(currentLetter) && 
+            answer.length >= 2 &&
+            isInDictionary) {
           if (!categoryAnswers[answer]) {
             categoryAnswers[answer] = [];
           }
@@ -801,29 +982,56 @@ function updateResultsScreen(roomData) {
     if (roomData.answers[uid]) {
       categories.forEach((category) => {
         const answer = roomData.answers[uid][category]?.trim() || "";
-        const isValid = answer.toLowerCase().startsWith(currentLetter);
+        const answerLower = answer.toLowerCase();
+        const isInDictionary = category === "name" || validWords[category].has(answerLower);
+        const votes = roomData.votes?.[uid]?.[category] || {};
+        const voteCount = Object.values(votes).filter(v => v === true).length;
+        const totalPlayers = Object.keys(roomData.players).length;
+        const isValidByVotes = voteCount >= Math.ceil(totalPlayers / 2);
+        const isValid = answerLower.startsWith(currentLetter) && 
+                       answerLower.length >= 2 && 
+                       (isInDictionary || isValidByVotes);
         const isUnique = isAnswerUnique(answer, category, uid, roomData.answers);
         let className = "";
         let points = "";
+        let votingHtml = "";
+
         if (!answer) {
           className = "invalid-answer";
           points = "(0 pts)";
-        } else if (!isValid) {
+        } else if (!answerLower.startsWith(currentLetter)) {
           className = "invalid-answer";
-          points = "(0 pts)";
-        } else if (isUnique) {
-          className = "unique-answer";
-          points = "(15 pts)";
-        } else {
-          className = "duplicate-answer";
-          points = "(10 pts)";
+          points = "(0 pts - wrong letter)";
+        } else if (answerLower.length < 2) {
+          className = "invalid-answer";
+          points = "(0 pts - too short)";
+        } else if (!isInDictionary && category !== "name" && !isValidByVotes) {
+          className = "pending-validation";
+          points = `(Votes: ${voteCount}/${Math.ceil(totalPlayers / 2)} needed)`;
+          if (uid !== currentUser.uid) {
+            votingHtml = `
+              <div class="vote-buttons" data-uid="${uid}" data-category="${category}">
+                <button onclick="voteAnswer('${uid}', '${category}', true)" ${votes[currentUser.uid] === true ? 'disabled' : ''}>
+                  <i class="fas fa-check"></i>
+                </button>
+                <button onclick="voteAnswer('${uid}', '${category}', false)" ${votes[currentUser.uid] === false ? 'disabled' : ''}>
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            `;
+          }
+        } else if (isValidByVotes || isInDictionary) {
+          className = isUnique ? "unique-answer" : "duplicate-answer";
+          points = isUnique ? "(15 pts)" : "(10 pts)";
         }
+
         resultsHTML += `
                 <div class="answer-row">
                     <span>${
                       categoryIcons[category]
                     } ${category.charAt(0).toUpperCase() + category.slice(1)}:</span>
                     <span class="${className}">${answer || "No answer"} ${points}</span>
+                    ${votingHtml}
                 </div>
             `;
       });
@@ -977,12 +1185,17 @@ categories.forEach((category) => {
       .textContent.toLowerCase();
     const value = this.value.toLowerCase().trim();
 
-    if (value && value.startsWith(currentLetter)) {
+    if (value && value.startsWith(currentLetter) && value.length >= 2) {
       this.style.borderLeft = "4px solid #6bcf7f";
+    } else if (value && value.startsWith(currentLetter)) {
+      // Answer starts with correct letter but is too short
+      this.style.borderLeft = "4px solid #ffd93d";
+      this.title = "Answer must be at least 2 letters long";
     } else if (value) {
       this.style.borderLeft = "4px solid #ff6b6b";
     } else {
       this.style.borderLeft = "none";
+      this.title = "";
     }
   });
 });
@@ -1074,6 +1287,42 @@ function startTimer() {
       submitAnswers();
     }
   }, 1000);
+}
+
+// Vote on an answer
+async function voteAnswer(targetUid, category, vote) {
+  if (!currentRoom || !currentUser || targetUid === currentUser.uid) return;
+
+  try {
+    const roomRef = db.collection("rooms").doc(currentRoom);
+    
+    // Update the votes in the database
+    await roomRef.update({
+      [`votes.${targetUid}.${category}.${currentUser.uid}`]: vote
+    });
+
+    // Get the updated room data
+    const roomDoc = await roomRef.get();
+    const roomData = roomDoc.data();
+    
+    // Check if majority vote is reached
+    const votes = roomData.votes[targetUid][category];
+    const voteCount = Object.values(votes).filter(v => v === true).length;
+    const totalPlayers = Object.keys(roomData.players).length;
+    
+    // If majority approves, update player score
+    if (voteCount >= Math.ceil(totalPlayers / 2)) {
+      const answer = roomData.answers[targetUid][category].toLowerCase();
+      const isUnique = isAnswerUnique(answer, category, targetUid, roomData.answers);
+      const scoreIncrease = isUnique ? 15 : 10;
+      
+      await roomRef.update({
+        [`players.${targetUid}.score`]: firebase.firestore.FieldValue.increment(scoreIncrease)
+      });
+    }
+  } catch (error) {
+    console.error("Error voting on answer:", error);
+  }
 }
 
 // Initialize the app
