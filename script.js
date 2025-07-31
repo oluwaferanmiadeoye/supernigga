@@ -201,28 +201,34 @@ async function createRoom() {
 }
 
 async function joinRoom() {
-  const playerName = document.getElementById("joinPlayerName").value.trim();
-  const roomCode = document
-    .getElementById("roomCode")
-    .value.trim()
-    .toUpperCase();
-
-  if (!playerName) {
-    alert("Please enter your name!");
-    return;
-  }
-
-  if (!roomCode || roomCode.length !== 4) {
-    alert("Please enter a valid 4-letter room code!");
-    return;
-  }
-
-  if (!currentUser) {
-    alert("Please wait for connection...");
-    return;
-  }
-
   try {
+    // First ensure we have authentication
+    if (!currentUser) {
+      // Try to authenticate again
+      const authResult = await auth.signInAnonymously();
+      currentUser = authResult.user;
+      console.log("Re-authenticated:", currentUser.uid);
+    }
+
+    const playerName = document.getElementById("joinPlayerName").value.trim();
+    const roomCode = document
+      .getElementById("roomCode")
+      .value.trim()
+      .toUpperCase();
+
+    if (!playerName) {
+      alert("Please enter your name!");
+      return;
+    }
+
+    if (!roomCode || roomCode.length !== 4) {
+      alert("Please enter a valid 4-letter room code!");
+      return;
+    }
+
+    console.log("Attempting to join room:", roomCode);
+
+    // Check if room exists
     const roomDoc = await db.collection("rooms").doc(roomCode).get();
 
     if (!roomDoc.exists) {
@@ -231,11 +237,14 @@ async function joinRoom() {
     }
 
     const roomData = roomDoc.data();
+    console.log("Room data:", roomData);
+
     if (Object.keys(roomData.players).length >= 8) {
       alert("Room is full! (Max 8 players)");
       return;
     }
 
+    // Add player to room
     await db
       .collection("rooms")
       .doc(roomCode)
@@ -247,34 +256,78 @@ async function joinRoom() {
         },
       });
 
+    console.log("Successfully joined room");
+
+    // Update game state
     currentRoom = roomCode;
     isHost = false;
-    setupRoomListener();
+
+    // Show lobby screen first, then setup listener
     showLobby();
+    setupRoomListener();
+
   } catch (error) {
     console.error("Error joining room:", error);
-    alert("Failed to join room. Please try again.");
+    if (error.code === 'permission-denied') {
+      alert("Unable to join room. Please check your connection and try again.");
+    } else {
+      alert("Failed to join room: " + error.message);
+    }
   }
 }
 
 function setupRoomListener() {
+  // Clean up existing listener if any
   if (roomListener) {
     roomListener();
+    roomListener = null;
   }
 
-  roomListener = db
-    .collection("rooms")
-    .doc(currentRoom)
-    .onSnapshot((doc) => {
-      if (!doc.exists) {
-        alert("Room was deleted!");
-        showHome();
-        return;
-      }
+  if (!currentRoom) {
+    console.error('No current room to listen to');
+    return;
+  }
 
-      const roomData = doc.data();
-      updateGameState(roomData);
-    });
+  console.log('Setting up room listener for room:', currentRoom);
+
+  try {
+    roomListener = db
+      .collection("rooms")
+      .doc(currentRoom)
+      .onSnapshot((doc) => {
+        if (!doc.exists) {
+          console.log('Room no longer exists');
+          alert("Room was deleted!");
+          showHome();
+          return;
+        }
+
+        const roomData = doc.data();
+        console.log('Room update received:', roomData);
+        
+        // Validate room data
+        if (!roomData || !roomData.players) {
+          console.error('Invalid room data received');
+          return;
+        }
+
+        // Make sure player is still in the room
+        if (!roomData.players[currentUser.uid]) {
+          console.log('Player no longer in room');
+          alert("You were removed from the room");
+          showHome();
+          return;
+        }
+
+        updateGameState(roomData);
+      }, (error) => {
+        console.error('Room listener error:', error);
+        alert("Lost connection to room. Please try rejoining.");
+        showHome();
+      });
+  } catch (error) {
+    console.error('Error setting up room listener:', error);
+  }
 }
 
 function updateGameState(roomData) {
@@ -290,30 +343,66 @@ function updateGameState(roomData) {
 }
 
 function showLobby() {
-  showScreen("lobbyScreen");
-  document.getElementById("displayRoomCode").textContent = currentRoom;
+  // Create lobby screen container
+  const body = document.body;
+  body.innerHTML = `
+    <div class="screen-wrapper">
+      <div id="lobbyScreen" class="screen active">
+        <div class="text-center">
+          <h1><i class="fas fa-bullseye"></i> Super Nigga</h1>
+          <h2>Game Lobby</h2>
+
+          <div class="room-code" id="displayRoomCode">${currentRoom}</div>
+          <p style="margin-bottom: 2rem; opacity: 0.8">
+            Share this code with your super niggas!
+          </p>
+
+          <div class="players-list" id="playersList">
+            <!-- Players will be dynamically added here -->
+          </div>
+
+          <div id="hostControls" class="text-center" style="display: none">
+            <button class="btn" onclick="startGame()">
+              <i class="fas fa-rocket"></i> Start Game
+            </button>
+          </div>
+
+          <button class="btn btn-secondary" onclick="leaveRoom()">
+            <i class="fas fa-sign-out-alt"></i> Leave Room
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
 
   if (isHost) {
     document.getElementById("hostControls").style.display = "block";
   }
+  
+  // Setup room listener after elements are created
+  setupRoomListener();
 }
 
 function updateLobby(roomData) {
   const playersList = document.getElementById("playersList");
+  if (!playersList) return; // Safety check
+
   playersList.innerHTML = "";
+
+  if (!roomData || !roomData.players) return; // Safety check
 
   Object.entries(roomData.players).forEach(([uid, player]) => {
     const playerCard = document.createElement("div");
     playerCard.className = "player-card";
     playerCard.innerHTML = `
-            <h3>${player.name}</h3>
-            <p>Score: ${player.score}</p>
-            ${
-              uid === roomData.host
-                ? '<p style="color: #ffd93d;"><i class="fas fa-crown"></i> Host</p>'
-                : ""
-            }
-        `;
+      <h3>${player.name}</h3>
+      <p>Score: ${player.score}</p>
+      ${
+        uid === roomData.host
+          ? '<p style="color: #ffd93d;"><i class="fas fa-crown"></i> Host</p>'
+          : ""
+      }
+    `;
     playersList.appendChild(playerCard);
   });
 }
