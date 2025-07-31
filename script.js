@@ -314,7 +314,7 @@ function setupRoomListener() {
         // Make sure player is still in the room
         if (!roomData.players[currentUser.uid]) {
           console.log('Player no longer in room');
-          alert("You were removed from the room");
+          alert("You left the room");
           showHome();
           return;
         }
@@ -375,8 +375,11 @@ function showLobby() {
     </div>
   `;
 
-  if (isHost) {
-    document.getElementById("hostControls").style.display = "block";
+  console.log("Showing lobby, isHost:", isHost);
+  const hostControls = document.getElementById("hostControls");
+  if (isHost && hostControls) {
+    console.log("Displaying host controls");
+    hostControls.style.display = "block";
   }
   
   // Setup room listener after elements are created
@@ -408,20 +411,42 @@ function updateLobby(roomData) {
 }
 
 async function startGame() {
-  if (!isHost) return;
+  if (!isHost || !currentRoom) {
+    console.log("Not authorized to start game or no room selected");
+    return;
+  }
 
   const randomLetter = String.fromCharCode(
     Math.floor(Math.random() * 26) + 65
   );
 
   try {
-    await db.collection("rooms").doc(currentRoom).update({
+    console.log("Starting game in room:", currentRoom);
+    const roomRef = db.collection("rooms").doc(currentRoom);
+    
+    // Verify room exists and user is host
+    const roomDoc = await roomRef.get();
+    if (!roomDoc.exists) {
+      console.error("Room not found");
+      alert("Room not found!");
+      return;
+    }
+    
+    const roomData = roomDoc.data();
+    if (roomData.host !== currentUser.uid) {
+      console.error("User is not host");
+      return;
+    }
+
+    await roomRef.update({
       gameState: "playing",
       currentLetter: randomLetter,
       answers: {},
       roundComplete: false,
       gameStartTime: firebase.firestore.FieldValue.serverTimestamp(),
     });
+    
+    console.log("Game started successfully");
   } catch (error) {
     console.error("Error starting game:", error);
     alert("Failed to start game. Please try again.");
