@@ -332,13 +332,18 @@ function setupRoomListener() {
 
 function updateGameState(roomData) {
   const gameState = roomData.gameState;
+  console.log("Updating game state to:", gameState);
 
-  if (gameState === "lobby") {
-    updateLobby(roomData);
-  } else if (gameState === "playing") {
-    updateGameScreen(roomData);
-  } else if (gameState === "results") {
-    updateResultsScreen(roomData);
+  try {
+    if (gameState === "lobby") {
+      updateLobby(roomData);
+    } else if (gameState === "playing") {
+      updateGameScreen(roomData);
+    } else if (gameState === "results") {
+      updateResultsScreen(roomData);
+    }
+  } catch (error) {
+    console.error("Error updating game state:", error);
   }
 }
 
@@ -454,23 +459,61 @@ async function startGame() {
 }
 
 function updateGameScreen(roomData) {
-  if (
-    document.getElementById("gameScreen").classList.contains("active")
-  ) {
+  // Create game screen if it doesn't exist
+  if (!document.getElementById("gameScreen")) {
+    const gameScreen = `
+      <div class="screen-wrapper">
+        <div id="gameScreen" class="screen">
+          <div class="text-center">
+            <div class="letter-display" id="currentLetter"></div>
+            <div class="timer" id="timer">30</div>
+            <div class="categories">
+              ${categories.map(category => `
+                <div class="category">
+                  <div class="category-icon">${categoryIcons[category]}</div>
+                  <h3>${category.charAt(0).toUpperCase() + category.slice(1)}</h3>
+                  <input
+                    type="text"
+                    id="${category}Input"
+                    placeholder="Enter ${category === 'thing' ? 'an' : 'a'} ${category}..."
+                    maxlength="30"
+                  />
+                </div>
+              `).join('')}
+            </div>
+            <button class="btn btn-success" id="submitBtn" onclick="submitAnswers()">
+              Submit Answers
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.innerHTML = gameScreen;
+    setupGameInputListeners();
+  }
+
+  const gameScreenElement = document.getElementById("gameScreen");
+  if (gameScreenElement.classList.contains("active")) {
     return; // Already on game screen
   }
 
-  showScreen("gameScreen");
-  document.getElementById("currentLetter").textContent =
-    roomData.currentLetter;
+  gameScreenElement.classList.add("active");
+  document.getElementById("currentLetter").textContent = roomData.currentLetter;
 
   // Clear previous inputs
   categories.forEach((category) => {
-    document.getElementById(category + "Input").value = "";
-    document.getElementById(category + "Input").disabled = false;
+    const input = document.getElementById(category + "Input");
+    if (input) {
+      input.value = "";
+      input.disabled = false;
+    }
   });
 
-  document.getElementById("submitBtn").disabled = false;
+  const submitBtn = document.getElementById("submitBtn");
+  if (submitBtn) {
+    submitBtn.disabled = false;
+  }
+
   startTimer();
 }
 
