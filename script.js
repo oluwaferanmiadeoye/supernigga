@@ -10,22 +10,38 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase with persistence
-firebase.initializeApp(firebaseConfig);
+try {
+  firebase.initializeApp(firebaseConfig);
+} catch (error) {
+  if (error.code === 'app/duplicate-app') {
+    // If the app is already initialized, get the existing instance
+    firebase.app();
+  } else {
+    console.error("Firebase initialization error:", error);
+    alert("Connection error. Please refresh and try again.");
+  }
+}
+
 const db = firebase.firestore();
 const auth = firebase.auth();
 const analytics = firebase.analytics();
 
-// Enable offline persistence for Firestore
-db.enablePersistence()
-  .catch((err) => {
-    if (err.code === 'failed-precondition') {
-      // Multiple tabs open, persistence can only be enabled in one tab at a time.
-      console.log('Persistence failed: Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-      // The current browser doesn't support persistence
-      console.log('Persistence not supported by browser');
-    }
-  });
+// Enable offline persistence for Firestore with error handling
+try {
+  await db.enablePersistence({synchronizeTabs: true})
+    .catch((err) => {
+      if (err.code === 'failed-precondition') {
+        // Multiple tabs open, persistence can only be enabled in one tab at a time.
+        console.log('Persistence failed: Multiple tabs open');
+      } else if (err.code === 'unimplemented') {
+        // The current browser doesn't support persistence
+        console.log('Persistence not supported by browser');
+      }
+    });
+} catch (error) {
+  console.warn("Persistence setup error:", error);
+  // Continue without persistence
+}
 
 // Configure Auth persistence
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
@@ -163,43 +179,68 @@ const validWords = {
   ])
 };
 
-// Initialize anonymous authentication
-auth
-  .signInAnonymously()
-  .then((result) => {
+// Initialize anonymous authentication with retry mechanism
+async function initializeAuth(retryCount = 0) {
+  try {
+    const result = await auth.signInAnonymously();
     currentUser = result.user;
     console.log("Signed in anonymously:", currentUser.uid);
     
-    // Set user properties in Analytics
-    analytics.setUserProperties({
-      userType: 'anonymous',
-      userId: currentUser.uid
-    });
+    try {
+      // Set user properties in Analytics
+      analytics.setUserProperties({
+        userType: 'anonymous',
+        userId: currentUser.uid
+      });
 
-    // Log user sign-in event
-    analytics.logEvent('user_login', {
-      method: 'anonymous',
-      userId: currentUser.uid
-    });
+      // Log user sign-in event
+      analytics.logEvent('user_login', {
+        method: 'anonymous',
+        userId: currentUser.uid
+      });
+    } catch (analyticsError) {
+      console.warn("Analytics error (non-critical):", analyticsError);
+    }
 
     // Store user in a separate collection for tracking
-    return db.collection('users').doc(currentUser.uid).set({
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
-      loginCount: firebase.firestore.FieldValue.increment(1),
-      isAnonymous: true
-    }, { merge: true });
-  })
-  .catch((error) => {
+    try {
+      await db.collection('users').doc(currentUser.uid).set({
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+        loginCount: firebase.firestore.FieldValue.increment(1),
+        isAnonymous: true
+      }, { merge: true });
+    } catch (dbError) {
+      console.warn("Database write error (non-critical):", dbError);
+    }
+
+    // Show success status
+    showConnectionStatus();
+  } catch (error) {
     console.error("Authentication failed:", error);
-    alert("Failed to connect. Please refresh the page.");
     
-    // Log error event
-    analytics.logEvent('login_error', {
-      error_code: error.code,
-      error_message: error.message
-    });
-  });
+    if (retryCount < 3) {  // Retry up to 3 times
+      console.log(`Retrying authentication (attempt ${retryCount + 1})...`);
+      setTimeout(() => initializeAuth(retryCount + 1), 1000 * (retryCount + 1));
+    } else {
+      alert("Failed to connect. Please check your internet connection and refresh the page.");
+      
+      try {
+        // Log error event
+        analytics.logEvent('login_error', {
+          error_code: error.code,
+          error_message: error.message,
+          retries: retryCount
+        });
+      } catch (analyticsError) {
+        console.warn("Analytics error:", analyticsError);
+      }
+    }
+  }
+}
+
+// Start authentication process
+initializeAuth();
 
 // Screen management
 function showScreen(screenId) {
@@ -1401,8 +1442,15 @@ function setupGameInputListeners() {
 }
 
 // Show connection status
-function showConnectionStatus() {
+function showConnectionStatus(status = 'checking') {
+  // Remove any existing status div
+  const existingStatus = document.getElementById('connectionStatus');
+  if (existingStatus) {
+    existingStatus.remove();
+  }
+
   const statusDiv = document.createElement("div");
+  statusDiv.id = 'connectionStatus';
   statusDiv.style.cssText = `
         position: fixed;
         top: 20px;
@@ -1414,17 +1462,29 @@ function showConnectionStatus() {
         font-size: 14px;
         z-index: 1000;
         backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
     `;
 
-  if (currentUser) {
+  if (status === 'connected' && currentUser) {
     statusDiv.innerHTML = '<i class="fas fa-circle text-success"></i> Connected';
     statusDiv.style.background = "rgba(108, 207, 127, 0.8)";
+  } else if (status === 'error') {
+    statusDiv.innerHTML = '<i class="fas fa-circle text-danger"></i> Connection Error';
+    statusDiv.style.background = "rgba(255, 107, 107, 0.8)";
   } else {
     statusDiv.innerHTML = '<i class="fas fa-circle text-warning"></i> Connecting...';
     statusDiv.style.background = "rgba(255, 217, 61, 0.8)";
   }
 
   document.body.appendChild(statusDiv);
+
+  // Remove the status div after 5 seconds if connected
+  if (status === 'connected') {
+    setTimeout(() => {
+      statusDiv.style.opacity = '0';
+      setTimeout(() => statusDiv.remove(), 300);
+    }, 5000);
+  }
 
   setTimeout(() => {
     statusDiv.remove();
