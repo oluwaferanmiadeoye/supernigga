@@ -346,13 +346,12 @@ input[type="text"]:focus {
 }
 
 .footer {
-  position: fixed;
-  bottom: 1rem;
-  left: 0;
-  right: 0;
+  position: relative;
+  margin-top: 2rem;
   text-align: center;
   font-size: 0.9rem;
   color: #64748b;
+  padding: 1rem;
 }
 
 .footer a {
