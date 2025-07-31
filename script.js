@@ -461,7 +461,7 @@ async function startGame() {
 function updateGameScreen(roomData) {
   // Create game screen if it doesn't exist
   if (!document.getElementById("gameScreen")) {
-    const gameScreen = `
+    document.body.innerHTML = `
       <div class="screen-wrapper">
         <div id="gameScreen" class="screen">
           <div class="text-center">
@@ -488,7 +488,6 @@ function updateGameScreen(roomData) {
         </div>
       </div>
     `;
-    document.body.innerHTML = gameScreen;
     setupGameInputListeners();
   }
 
@@ -552,25 +551,38 @@ function startTimer() {
 }
 
 async function submitAnswers() {
-  if (gameTimer) {
-    clearInterval(gameTimer);
-  }
-
-  const answers = {};
-  const currentLetter = document
-    .getElementById("currentLetter")
-    .textContent.toLowerCase();
-
-  categories.forEach((category) => {
-    const input = document.getElementById(category + "Input");
-    const value = input.value.trim();
-    answers[category] = value;
-    input.disabled = true;
-  });
-
-  document.getElementById("submitBtn").disabled = true;
-
   try {
+    if (gameTimer) {
+      clearInterval(gameTimer);
+    }
+
+    const currentLetterElement = document.getElementById("currentLetter");
+    if (!currentLetterElement) {
+      console.error("Current letter element not found");
+      return;
+    }
+    
+    const answers = {};
+    const currentLetter = currentLetterElement.textContent.toLowerCase();
+
+    // Disable all inputs and submit button first
+    const submitButton = document.getElementById("submitBtn");
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    categories.forEach((category) => {
+      const input = document.getElementById(category + "Input");
+      if (!input) {
+        console.error(`Input element for category ${category} not found`);
+        return;
+      }
+      const value = input.value.trim();
+      answers[category] = value;
+      input.disabled = true;
+    });
+
+    // Submit answers to database
     await db
       .collection("rooms")
       .doc(currentRoom)
@@ -578,18 +590,41 @@ async function submitAnswers() {
         [`answers.${currentUser.uid}`]: answers,
       });
 
+    console.log("Answers submitted successfully");
+
     // Check if all players have submitted
     const roomDoc = await db.collection("rooms").doc(currentRoom).get();
+    if (!roomDoc.exists) {
+      throw new Error("Room not found after submitting answers");
+    }
+
     const roomData = roomDoc.data();
-    const playerCount = Object.keys(roomData.players).length;
-    const answerCount = Object.keys(roomData.answers).length;
+    if (!roomData) {
+      throw new Error("Invalid room data after submitting answers");
+    }
+
+    const playerCount = Object.keys(roomData.players || {}).length;
+    const answerCount = Object.keys(roomData.answers || {}).length;
+
+    console.log(`Answers submitted: ${answerCount}/${playerCount}`);
 
     if (answerCount >= playerCount && isHost) {
-      // All players submitted, calculate scores
-      calculateAndShowResults();
+      console.log("All players submitted, calculating results...");
+      await calculateAndShowResults();
     }
   } catch (error) {
     console.error("Error submitting answers:", error);
+    // Re-enable inputs on error
+    categories.forEach((category) => {
+      const input = document.getElementById(category + "Input");
+      if (input) {
+        input.disabled = false;
+      }
+    });
+    const submitButton = document.getElementById("submitBtn");
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
   }
 }
 
@@ -597,11 +632,22 @@ async function calculateAndShowResults() {
   if (!isHost) return;
 
   try {
-    const roomDoc = await db.collection("rooms").doc(currentRoom).get();
-    const roomData = roomDoc.data();
-    const currentLetter = roomData.currentLetter.toLowerCase();
+    console.log("Calculating results...");
+    const roomRef = db.collection("rooms").doc(currentRoom);
+    const roomDoc = await roomRef.get();
+    
+    if (!roomDoc.exists) {
+      console.error("Room not found");
+      return;
+    }
 
-    // Calculate scores
+    const roomData = roomDoc.data();
+    if (!roomData) {
+      console.error("Invalid room data");
+      return;
+    }
+
+    const currentLetter = roomData.currentLetter.toLowerCase();
     const updatedPlayers = { ...roomData.players };
     const allAnswers = roomData.answers;
 
@@ -623,29 +669,64 @@ async function calculateAndShowResults() {
       // Award points
       Object.entries(categoryAnswers).forEach(([answer, uids]) => {
         uids.forEach((uid) => {
-          updatedPlayers[uid].score += 10; // Base points
-          if (uids.length === 1) {
-            updatedPlayers[uid].score += 5; // Unique bonus
+          if (updatedPlayers[uid]) {
+            updatedPlayers[uid].score += 10; // Base points
+            if (uids.length === 1) {
+              updatedPlayers[uid].score += 5; // Unique bonus
+            }
           }
         });
       });
     });
 
-    await db.collection("rooms").doc(currentRoom).update({
+    console.log("Updating game state with results...");
+    await roomRef.update({
       players: updatedPlayers,
       gameState: "results",
       roundComplete: true,
     });
+    console.log("Results updated successfully");
   } catch (error) {
     console.error("Error calculating results:", error);
   }
 }
 
 function updateResultsScreen(roomData) {
-  showScreen("resultsScreen");
+  console.log("Updating results screen with data:", roomData);
+  
+  // Create results screen if it doesn't exist
+  if (!document.getElementById("resultsScreen")) {
+    document.body.innerHTML = `
+      <div class="screen-wrapper">
+        <div id="resultsScreen" class="screen active">
+          <div class="text-center">
+            <h2>Round Results</h2>
+            <div class="results-grid" id="resultsGrid"></div>
+            <div class="leaderboard">
+              <h2><i class="fas fa-trophy"></i> Leaderboard</h2>
+              <div id="leaderboardList"></div>
+            </div>
+            <div id="hostNextRound" style="display: none">
+              <button class="btn" onclick="nextRound()">
+                <i class="fas fa-bullseye"></i> Next Round
+              </button>
+            </div>
+            <button class="btn btn-secondary" onclick="endGame()">
+              End Game
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   const resultsGrid = document.getElementById("resultsGrid");
   const leaderboardList = document.getElementById("leaderboardList");
+
+  if (!resultsGrid || !leaderboardList) {
+    console.error("Results screen elements not found");
+    return;
+  }
 
   resultsGrid.innerHTML = "";
   leaderboardList.innerHTML = "";
