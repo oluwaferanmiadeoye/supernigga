@@ -11,7 +11,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+
     <div class="container">
       <h1><i class="fas fa-bullseye"></i> Super Nigga</h1>
 
@@ -44,9 +44,22 @@
       <!-- Join Room Screen -->
       <div id="joinScreen" class="screen">
         <div class="text-center">
-          <h2 style="margin-bottom: 2rem">Join a Room</h2>
+          <h1><i class="fas fa-bullseye"></i> Super Nigga</h1>
+          
+          <h2>Join Room</h2>
 
-          <div class="input-group"></div>
+          <div class="input-group">
+            <label for="joinPlayerName">Your Name</label>
+            <input
+              type="text"
+              id="joinPlayerName"
+              placeholder="Enter your name"
+              maxlength="20"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="input-group">
             <label for="roomCode">Room Code</label>
             <input
               type="text"
@@ -54,13 +67,18 @@
               placeholder="Enter 4-letter code"
               maxlength="4"
               style="text-transform: uppercase"
+              autocomplete="off"
             />
           </div>
 
-          <button class="btn btn-success" onclick="joinRoom()">
-            Join Game
-          </button>
-          <button class="btn btn-secondary" onclick="showHome()">Back</button>
+          <div class="button-group">
+            <button class="btn btn-success" onclick="joinRoom()">
+              <i class="fas fa-sign-in-alt"></i> Join Game
+            </button>
+            <button class="btn btn-secondary" onclick="showHome()">
+              <i class="fas fa-arrow-left"></i> Back
+            </button>
+          </div>
         </div>
       </div>
 
@@ -189,26 +207,24 @@
           <button class="btn btn-secondary" onclick="endGame()">
             End Game
           </button>
+          
         </div>
       </div>
 
-      <footer class="footer">
-        <p>
-          Developed by
-          <a
-            href="https://x.com/builtbyajay"
-            target="_blank"
-            rel="noopener noreferrer"
-            >Ajay</a
-          >
-        </p>
-      </footer>
+     
+    </div>
     </div>
 
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script>
+      // Enable cross-origin isolation for better security and persistence
+      if (window.crossOriginIsolated !== true) {
+        console.log('Cross-Origin Isolation not enabled');
+      }
+    </script>
     <script src="script.js"></script>
   </body>
 </html>

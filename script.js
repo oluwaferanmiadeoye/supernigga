@@ -1,4 +1,4 @@
-// Firebase configuration - Replace with your Firebase config
+// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCg5F2_5C9dnl2oCj2ad9gxsxdPWRbcaOs",
   authDomain: "omoshiroi-8487c.firebaseapp.com",
@@ -9,10 +9,28 @@ const firebaseConfig = {
   measurementId: "G-2Z21WPFC9C"
 };
 
-// Initialize Firebase
+// Initialize Firebase with persistence
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
+
+// Enable offline persistence for Firestore
+db.enablePersistence()
+  .catch((err) => {
+    if (err.code === 'failed-precondition') {
+      // Multiple tabs open, persistence can only be enabled in one tab at a time.
+      console.log('Persistence failed: Multiple tabs open');
+    } else if (err.code === 'unimplemented') {
+      // The current browser doesn't support persistence
+      console.log('Persistence not supported by browser');
+    }
+  });
+
+// Configure Auth persistence
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+  .catch((error) => {
+    console.error('Auth persistence error:', error);
+  });
 
 // Game state
 let currentRoom = null;
@@ -45,19 +63,87 @@ auth
 
 // Screen management
 function showScreen(screenId) {
-  document.querySelectorAll(".screen").forEach((screen) => {
-    screen.classList.remove("active");
-  });
-  document.getElementById(screenId).classList.add("active");
+  const body = document.body;
+  
+  // Remove all existing wrappers and the container
+  const existingWrappers = document.querySelectorAll('.screen-wrapper');
+  const container = document.querySelector('.container');
+  
+  if (screenId === "homeScreen") {
+    // For home screen, just reload the page
+    location.reload();
+    return;
+  }
+  
+  // Remove container if it exists
+  if (container) {
+    container.remove();
+  }
+  
+  // Remove any existing screen wrappers
+  existingWrappers.forEach(wrapper => wrapper.remove());
+  
+  // Create new wrapper for the current screen
+  const screenWrapper = document.createElement('div');
+  screenWrapper.className = 'screen-wrapper';
+  
+  // Move the original screen instead of cloning
+  const screen = document.getElementById(screenId);
+  if (!screen) return;
+  
+  screen.classList.add('active');
+  screenWrapper.appendChild(screen);
+  body.appendChild(screenWrapper);
+
+  // Reattach Firebase listeners if needed
+  if (screenId === "lobbyScreen") {
+    setupRoomListener();
+  }
+  
+  // Focus input fields if needed
+  if (screenId === "joinScreen") {
+    const roomCodeInput = screen.querySelector("#roomCode");
+    if (roomCodeInput) {
+      roomCodeInput.focus();
+    }
+  }
+
+  // Make sure host controls are visible if the user is host
+  if (screenId === "lobbyScreen" && isHost) {
+    const hostControls = screen.querySelector("#hostControls");
+    if (hostControls) {
+      hostControls.style.display = "block";
+    }
+  }
+
+  // Setup game screen if needed
+  if (screenId === "gameScreen") {
+    setupGameInputListeners();
+  }
 }
 
 function showHome() {
-  showScreen("homeScreen");
+  location.reload();
 }
 
 function showJoinRoom() {
-  showScreen("joinScreen");
-  document.getElementById("roomCode").focus();
+  const joinScreen = document.getElementById("joinScreen");
+  const screenWrapper = document.createElement('div');
+  screenWrapper.className = 'screen-wrapper';
+  
+  // Clear existing content
+  document.body.innerHTML = '';
+  
+  // Setup join screen
+  joinScreen.classList.add('active');
+  screenWrapper.appendChild(joinScreen);
+  document.body.appendChild(screenWrapper);
+  
+  // Focus the name input
+  setTimeout(() => {
+    const nameInput = document.getElementById("joinPlayerName");
+    if (nameInput) nameInput.focus();
+  }, 100);
 }
 
 // Room management
@@ -115,7 +201,7 @@ async function createRoom() {
 }
 
 async function joinRoom() {
-  const playerName = document.getElementById("playerName").value.trim();
+  const playerName = document.getElementById("joinPlayerName").value.trim();
   const roomCode = document
     .getElementById("roomCode")
     .value.trim()
@@ -696,6 +782,41 @@ function startTimer() {
 
 // Initialize the app
 console.log("ScatterWords initialized! 🎯");
+
+// Setup game input listeners
+function setupGameInputListeners() {
+  categories.forEach((category) => {
+    const input = document.getElementById(category + "Input");
+    if (input) {
+      input.addEventListener("input", function () {
+        const currentLetter = document
+          .getElementById("currentLetter")
+          .textContent.toLowerCase();
+        const value = this.value.toLowerCase().trim();
+
+        if (value && value.startsWith(currentLetter)) {
+          this.style.borderLeft = "4px solid #6bcf7f";
+        } else if (value) {
+          this.style.borderLeft = "4px solid #ff6b6b";
+        } else {
+          this.style.borderLeft = "none";
+        }
+      });
+
+      input.addEventListener("keypress", function (e) {
+        if (e.key === "Enter") {
+          const inputs = document.querySelectorAll('#gameScreen input[type="text"]');
+          const currentIndex = Array.from(inputs).indexOf(this);
+          if (currentIndex < inputs.length - 1) {
+            inputs[currentIndex + 1].focus();
+          } else {
+            submitAnswers();
+          }
+        }
+      });
+    }
+  });
+}
 
 // Show connection status
 function showConnectionStatus() {
