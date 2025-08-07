@@ -1619,7 +1619,7 @@ function showConnectionStatus(status = 'checking') {
 // Show initial connection status
 setTimeout(showConnectionStatus, 1000);
 
-// Monitor auth state
+// Monitor auth state mehnn
 auth.onAuthStateChanged((user) => {
   if (user) {
     currentUser = user;
